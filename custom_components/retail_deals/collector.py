@@ -122,14 +122,17 @@ def _collect_auchan(limit: int = 500) -> list[dict]:
 def _collect_promoazi(store_name: str, url: str, limit: int = 100) -> list[dict]:
     deals = []
     try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, timeout=30000)
-            page.wait_for_timeout(3000)
-            text = page.inner_text("body")
-            browser.close()
+        try:
+            from bs4 import BeautifulSoup
+            resp = SESSION.get(url, timeout=15)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            text = soup.get_text("\n")
+        except ImportError:
+            _LOGGER.warning("%s: beautifulsoup4 not installed, using raw HTML", store_name)
+            resp = SESSION.get(url, timeout=15)
+            resp.raise_for_status()
+            text = resp.text
 
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         price_re = re.compile(r'(\d+[.,]\d{2})\s*lei')
@@ -168,8 +171,6 @@ def _collect_promoazi(store_name: str, url: str, limit: int = 100) -> list[dict]
                             })
             i += 1
 
-    except ImportError:
-        _LOGGER.warning("%s: playwright not installed", store_name)
     except Exception as e:
         _LOGGER.warning("%s: %s", store_name, e)
 
