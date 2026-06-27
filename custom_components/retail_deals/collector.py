@@ -185,6 +185,8 @@ def collect_all_deals(
     stores: list[str], top: int = 20, min_discount: float = 15
 ) -> dict:
     """Collect deals from all configured stores. Returns structured dict."""
+    top = int(top)
+    min_discount = float(min_discount)
     all_deals = []
 
     store_funcs = {
