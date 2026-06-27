@@ -5,28 +5,22 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     DOMAIN, CONF_STORES, CONF_TOP, CONF_MIN_DISCOUNT,
     CONF_SCAN_INTERVAL, DEFAULT_STORES, DEFAULT_TOP,
-    DEFAULT_MIN_DISCOUNT, DEFAULT_SCAN_INTERVAL, STORES,
+    DEFAULT_MIN_DISCOUNT, DEFAULT_SCAN_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-STORE_OPTIONS = {
-    "auchan": "Auchan",
-    "kaufland": "Kaufland",
-    "lidl": "Lidl",
-    "carrefour": "Carrefour",
-}
+STORE_OPTIONS = ["auchan", "kaufland", "lidl", "carrefour"]
 
-STEP_USER_DATA_SCHEMA = vol.Schema({
+DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_STORES, default=DEFAULT_STORES): vol.All(
-        vol.Coerce(list), [vol.In(STORE_OPTIONS)]
+        vol.Coerce(list),
     ),
     vol.Required(CONF_TOP, default=DEFAULT_TOP): vol.All(
         vol.Coerce(int), vol.Range(min=5, max=50)
@@ -53,35 +47,25 @@ class RetailDealsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                # Validate stores
                 stores = user_input.get(CONF_STORES, DEFAULT_STORES)
-                if not stores:
+                if isinstance(stores, str):
+                    stores = [s.strip() for s in stores.split(",")]
+
+                valid_stores = [s for s in stores if s in STORE_OPTIONS]
+                if not valid_stores:
                     errors["base"] = "no_stores"
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=STEP_USER_DATA_SCHEMA,
-                        errors=errors,
+                else:
+                    user_input[CONF_STORES] = valid_stores
+                    return self.async_create_entry(
+                        title="Retail Deals Romania",
+                        data=user_input,
                     )
-
-                return self.async_create_entry(
-                    title="Retail Deals Romania",
-                    data=user_input,
-                )
-
-            except Exception as err:
+            except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=DATA_SCHEMA,
             errors=errors,
         )
-
-
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
-
-
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate there is invalid auth."""

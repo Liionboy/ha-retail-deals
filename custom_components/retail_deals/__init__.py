@@ -1,5 +1,4 @@
 """The Retail Deals Romania integration."""
-import asyncio
 import logging
 from datetime import timedelta
 
@@ -33,14 +32,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         scan_interval_minutes=scan_interval,
     )
 
-    # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register update listener for options changes
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     return True
@@ -78,8 +75,8 @@ class RetailDealsCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict:
         """Fetch data from retail stores."""
         try:
-            data = await asyncio.get_event_loop().run_in_executor(
-                None, collect_all_deals,
+            data = await self.hass.async_add_executor_job(
+                collect_all_deals,
                 self.stores, self.top, self.min_discount,
             )
             return data
