@@ -65,9 +65,16 @@ def _collect_auchan(limit: int = 500) -> list[dict]:
                     break
 
                 for p in products:
-                    pr = p.get("priceRange", {})
-                    sell = pr.get("sellingPrice", {}).get("lowPrice", 0)
-                    lst = pr.get("listPrice", {}).get("lowPrice", 0)
+                    try:
+                        pr = p.get("priceRange") or {}
+                        sp = pr.get("sellingPrice") or {}
+                        lp = pr.get("listPrice") or {}
+                        sell = sp.get("lowPrice") or 0
+                        lst = lp.get("lowPrice") or 0
+                        sell = float(sell) if sell else 0
+                        lst = float(lst) if lst else 0
+                    except (TypeError, ValueError):
+                        continue
 
                     if lst <= 0 or sell <= 0 or sell >= lst:
                         continue
