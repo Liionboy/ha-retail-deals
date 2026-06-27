@@ -1,0 +1,124 @@
+# Exemplu Dashboard — Retail Deals Romania
+
+## Card minimalist
+```yaml
+type: custom:retail-deals-card
+entity: sensor.retail_deals_summary
+title: "🛒 Reduceri săptămânale"
+max_items: 5
+compact: true
+```
+
+## Card complet
+```yaml
+type: custom:retail-deals-card
+entity: sensor.retail_deals_summary
+title: "🛒 Cele mai bune reduceri"
+show_stores: true
+show_prices: true
+show_savings: true
+max_items: 10
+compact: false
+```
+
+## Entities card (fără custom card)
+```yaml
+type: entities
+title: "🛒 Reduceri Retail"
+entities:
+  - entity: sensor.retail_deals_summary
+    name: Total oferte
+  - entity: sensor.retail_deals_best
+    name: Cel mai bun discount
+  - entity: sensor.deals_auchan
+    name: Auchan
+  - entity: sensor.deals_kaufland
+    name: Kaufland
+  - entity: sensor.deals_lidl
+    name: Lidl
+  - entity: sensor.deals_carrefour
+    name: Carrefour
+```
+
+## Glance card (mini overview)
+```yaml
+type: glance
+title: "🛒 Reduceri pe magazine"
+entities:
+  - entity: sensor.deals_auchan
+    name: Auchan
+  - entity: sensor.deals_kaufland
+    name: Kaufland
+  - entity: sensor.deals_lidl
+    name: Lidl
+  - entity: sensor.deals_carrefour
+    name: Carrefour
+```
+
+## Markdown card (custom)
+```yaml
+type: markdown
+title: "🛒 Top Reduceri"
+content: >
+  {% set deals = state_attr('sensor.retail_deals_summary', 'deals') %}
+  {% if deals %}
+  | # | Magazin | Produs | Preț | Reducere |
+  |---|---------|--------|------|----------|
+  {% for deal in deals[:5] %}
+  | {{ loop.index }} | **{{ deal.store }}** | {{ deal.product[:30] }} | ~~{{ deal.price_old }}~~ → **{{ deal.price_new }} lei** | 🔴 -{{ deal.discount_pct }}% |
+  {% endfor %}
+  {% else %}
+  Nu sunt reduceri disponibile.
+  {% endif %}
+```
+
+## Automatizare — Notificare reduceri mari
+```yaml
+automation:
+  - alias: "🛒 Alertă Reduceri Mari"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.retail_deals_best
+        above: 50
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state != trigger.from_state.state }}"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🔥 Reducere mare!"
+          message: >-
+            {{ state_attr('sensor.retail_deals_best', 'product') }} 
+            la {{ state_attr('sensor.retail_deals_best', 'store') }} 
+            cu {{ states('sensor.retail_deals_best') }}% reducere!
+            Preț: {{ state_attr('sensor.retail_deals_best', 'price_new') }} lei
+            (economie {{ state_attr('sensor.retail_deals_best', 'savings') }} lei)
+          data:
+            url: "{{ state_attr('sensor.retail_deals_best', 'url') }}"
+```
+
+## Automatizare — Rezumat zilnic
+```yaml
+automation:
+  - alias: "🛒 Rezumat Reduceri Zilnic"
+    trigger:
+      - platform: time
+        at: "09:00:00"
+    action:
+      - service: notify.telegram
+        data:
+          title: "🛒 Reduceri azi"
+          message: >-
+            {% set deals = state_attr('sensor.retail_deals_summary', 'deals') %}
+            {% set by_store = state_attr('sensor.retail_deals_summary', 'by_store') %}
+            📊 {{ states('sensor.retail_deals_summary') }} oferte disponibile
+            
+            {% for store, data in by_store.items() %}
+            • {{ store }}: {{ data.count }} oferte (Ø {{ data.avg_discount }}%)
+            {% endfor %}
+            
+            🏆 Top 3:
+            {% for deal in deals[:3] %}
+            {{ loop.index }}. {{ deal.product[:35] }} — {{ deal.store }} — -{{ deal.discount_pct }}% ({{ deal.price_new }} lei)
+            {% endfor %}
+```
