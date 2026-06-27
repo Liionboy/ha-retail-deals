@@ -1,0 +1,13 @@
+{
+  "domain": "retail_deals",
+  "name": "Retail Deals Romania",
+  "codeowners": ["@adrian"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/Adrian/ha-retail-deals",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Adrian/ha-retail-deals/issues",
+  "requirements": ["requests>=2.28.0"],
+  "version": "1.0.0",
+  "after_dependencies": []
+}

@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Retail Deals Romania",
+        "description": "Configurează colectarea reducerilor de la magazinele din România.\n\n**Auchan** — API direct (VTEX)\n**Kaufland, Lidl, Carrefour** — via PromoAzi.ro",
+        "data": {
+          "stores": "Magazine",
+          "top": "Top oferte",
+          "min_discount": "Discount minim (%)",
+          "scan_interval": "Interval actualizare (minute)"
+        }
+      }
+    },
+    "error": {
+      "no_stores": "Selectează cel puțin un magazin.",
+      "unknown": "Eroare necunoscută."
+    }
+  }
+}

@@ -1,0 +1,16 @@
+refresh:
+  name: "Refresh Deals"
+  description: "Force refresh of retail deals data"
+  fields:
+    stores:
+      name: "Stores"
+      description: "Which stores to refresh (leave empty for all)"
+      required: false
+      selector:
+        select:
+          options:
+            - "auchan"
+            - "kaufland"
+            - "lidl"
+            - "carrefour"
+          multiple: true
