@@ -8,5 +8,7 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Liionboy/ha-retail-deals/issues",
   "requirements": [],
-  "version": "1.0.1"
+  "version": "1.1.1",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling"
 }
