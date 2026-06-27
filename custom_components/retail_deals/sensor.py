@@ -1,4 +1,4 @@
-"""Sensor platform for Retail Deals Romania."""
+"""Sensor platform for Retail Deals Romania — clean, simple, fast."""
 import logging
 from typing import Any
 
@@ -8,43 +8,28 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN, STORES, CONF_STORES, CONF_TOP,
-    DEFAULT_STORES, DEFAULT_TOP,
-)
+from .const import DOMAIN, STORES, CONF_STORES, CONF_TOP, DEFAULT_STORES, DEFAULT_TOP
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensor entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     stores = entry.data.get(CONF_STORES, DEFAULT_STORES)
-    top = entry.data.get(CONF_TOP, DEFAULT_TOP)
+    top = min(int(entry.data.get(CONF_TOP, DEFAULT_TOP)), 10)
 
-    entities = []
-
-    # Main summary sensor — all deals as attributes
-    entities.append(RetailDealsSummarySensor(coordinator, entry))
-
-    # Per-store sensors
+    entities = [RetailDealsSummarySensor(coordinator, entry)]
     for store_id in stores:
         entities.append(RetailDealsStoreSensor(coordinator, entry, store_id))
-
-    # Individual deal sensors (top 10) — product name as state
-    for i in range(min(int(top), 10)):
+    for i in range(top):
         entities.append(RetailDealsItemSensor(coordinator, entry, i))
 
     async_add_entities(entities)
 
 
 class RetailDealsBaseSensor(CoordinatorEntity, SensorEntity):
-    """Base class for retail deals sensors."""
-
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._entry = entry
@@ -55,15 +40,13 @@ class RetailDealsBaseSensor(CoordinatorEntity, SensorEntity):
             "identifiers": {(DOMAIN, self._entry.entry_id)},
             "name": "Retail Deals Romania",
             "manufacturer": "Jarvis",
-            "model": "Deals Collector",
-            "sw_version": "1.0.0",
         }
 
 
 class RetailDealsSummarySensor(RetailDealsBaseSensor):
-    """Main summary sensor — state = total deals, attributes = all deals list."""
+    """Summary — state = total deals, attributes = top 10 deals with all info."""
 
-    _attr_name = "Retail Deals Summary"
+    _attr_name = "Retail Deals"
     _attr_icon = "mdi:shopping"
 
     def __init__(self, coordinator, entry):
@@ -81,126 +64,111 @@ class RetailDealsSummarySensor(RetailDealsBaseSensor):
         deals = data.get("deals", [])
         by_store = data.get("by_store", {})
 
-        # Format deals for display
-        deals_list = []
-        for i, d in enumerate(deals[:20], 1):
-            deals_list.append(
-                f"{i}. {d.get('store', '')} | "
-                f"{d.get('product', '')[:45]} | "
-                f"~~{d.get('price_old', 0):.2f}~~ → {d.get('price_new', 0):.2f} lei | "
-                f"-{d.get('discount_pct', 0):.0f}%"
-            )
-
-        # Format store summary
-        stores_summary = []
-        for store, sd in by_store.items():
-            stores_summary.append(
-                f"{store}: {sd.get('count', 0)} oferte, "
-                f"best -{sd.get('best_discount', 0):.0f}% "
-                f"({sd.get('best_product', '')[:30]})"
-            )
-
-        return {
-            "deals": deals_list,
-            "stores": stores_summary,
-            "best_discount": data.get("best_discount", 0),
+        attrs = {
+            "last_update": data.get("last_update", ""),
+            "best_discount": f"{data.get('best_discount', 0)}%",
             "best_product": data.get("best_product", ""),
             "best_store": data.get("best_store", ""),
-            "last_update": data.get("last_update", ""),
-            # Raw data for card
-            "deals_raw": deals,
-            "by_store": by_store,
         }
+
+        # Add each deal as a separate attribute — this shows in HA UI!
+        for i, d in enumerate(deals[:10], 1):
+            product = (d.get("product") or "")[:50]
+            store = d.get("store", "")
+            po = d.get("price_old", 0)
+            pn = d.get("price_new", 0)
+            disc = d.get("discount_pct", 0)
+            savings = d.get("savings", 0)
+            attrs[f"#{i} {product}"] = (
+                f"{store} | {po:.2f} → {pn:.2f} lei | "
+                f"-{disc:.0f}% | economie {savings:.2f} lei"
+            )
+
+        # Store summary
+        for store, sd in by_store.items():
+            attrs[f"magazin_{store.lower()}"] = (
+                f"{sd.get('count', 0)} oferte | "
+                f"Ø {sd.get('avg_discount', 0)}% | "
+                f"best: {sd.get('best_product', '')[:30]}"
+            )
+
+        return attrs
 
 
 class RetailDealsStoreSensor(RetailDealsBaseSensor):
-    """Sensor for a specific store — state = count, attributes = best deal."""
+    """Per-store sensor — state = count, attributes = top 5 deals."""
 
     def __init__(self, coordinator, entry, store_id: str):
         super().__init__(coordinator, entry)
         self._store_id = store_id
-        store_info = STORES.get(store_id, {})
-        self._attr_name = f"Deals {store_info.get('name', store_id)}"
-        self._attr_icon = store_info.get("icon", "mdi:store")
+        info = STORES.get(store_id, {})
+        self._attr_name = f"Deals {info.get('name', store_id)}"
+        self._attr_icon = info.get("icon", "mdi:store")
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{store_id}"
 
     @property
     def native_value(self) -> int:
         data = self.coordinator.data or {}
-        by_store = data.get("by_store", {})
-        return by_store.get(self._store_id, {}).get("count", 0)
+        return data.get("by_store", {}).get(self._store_id, {}).get("count", 0)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
-        by_store = data.get("by_store", {})
-        sd = by_store.get(self._store_id, {})
-
-        # Get deals for this store
+        sd = data.get("by_store", {}).get(self._store_id, {})
         all_deals = data.get("deals", [])
         store_deals = [d for d in all_deals if d.get("store", "").lower() == self._store_id]
 
-        deals_list = []
-        for i, d in enumerate(store_deals[:5], 1):
-            deals_list.append(
-                f"{i}. {d.get('product', '')[:45]} | "
-                f"~~{d.get('price_old', 0):.2f}~~ → {d.get('price_new', 0):.2f} lei | "
-                f"-{d.get('discount_pct', 0):.0f}%"
-            )
-
-        return {
-            "avg_discount": sd.get("avg_discount", 0),
-            "best_discount": sd.get("best_discount", 0),
+        attrs = {
+            "avg_discount": f"{sd.get('avg_discount', 0)}%",
+            "best_discount": f"{sd.get('best_discount', 0)}%",
             "best_product": sd.get("best_product", ""),
-            "deals": deals_list,
         }
+
+        for i, d in enumerate(store_deals[:5], 1):
+            product = (d.get("product") or "")[:50]
+            po = d.get("price_old", 0)
+            pn = d.get("price_new", 0)
+            disc = d.get("discount_pct", 0)
+            attrs[f"#{i} {product}"] = f"{po:.2f} → {pn:.2f} lei | -{disc:.0f}%"
+
+        return attrs
 
 
 class RetailDealsItemSensor(RetailDealsBaseSensor):
-    """Sensor for a specific deal — state = product name!"""
+    """Individual deal sensor — state = product name, attributes = all details."""
 
     def __init__(self, coordinator, entry, index: int):
         super().__init__(coordinator, entry)
         self._index = index
+        icons = {0: "mdi:trophy", 1: "mdi:medal", 2: "mdi:medal-outline"}
+        self._attr_icon = icons.get(index, "mdi:tag-outline")
         self._attr_name = f"Deal #{index + 1}"
-        self._attr_icon = self._get_icon(index)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_deal_{index}"
-
-    @staticmethod
-    def _get_icon(index: int) -> str:
-        if index == 0:
-            return "mdi:trophy"
-        if index == 1:
-            return "mdi:medal"
-        if index == 2:
-            return "mdi:medal-outline"
-        return "mdi:tag-outline"
 
     @property
     def native_value(self) -> str:
-        """State = product name (so it shows in HA UI)."""
+        """Product name as state — visible in HA UI."""
         data = self.coordinator.data or {}
         deals = data.get("deals", [])
         if self._index < len(deals):
-            product = deals[self._index].get("product", "")
-            return product[:50] if product else "N/A"
+            return (deals[self._index].get("product") or "N/A")[:50]
         return "N/A"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """All deal details as attributes."""
+        """All deal details as simple attributes."""
         data = self.coordinator.data or {}
         deals = data.get("deals", [])
         if self._index < len(deals):
             d = deals[self._index]
             return {
-                "store": d.get("store", ""),
-                "price_old": d.get("price_old", 0),
-                "price_new": d.get("price_new", 0),
-                "discount_pct": d.get("discount_pct", 0),
-                "savings": d.get("savings", 0),
-                "url": d.get("url", ""),
-                "category": d.get("category", ""),
+                "magazin": d.get("store", ""),
+                "pret_vechi": f"{d.get('price_old', 0):.2f} lei",
+                "pret_nou": f"{d.get('price_new', 0):.2f} lei",
+                "reducere": f"{d.get('discount_pct', 0):.0f}%",
+                "economie": f"{d.get('savings', 0):.2f} lei",
+                "categorie": d.get("category", ""),
                 "brand": d.get("brand", ""),
+                "link": d.get("url", ""),
             }
         return {}

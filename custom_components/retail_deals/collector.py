@@ -1,8 +1,6 @@
-"""Retail deals collector — fetches deals from Romanian stores."""
-import json
+"""Retail deals collector — optimized for speed."""
 import logging
 import re
-from dataclasses import dataclass, asdict
 from datetime import datetime
 from urllib.parse import quote
 
@@ -19,7 +17,7 @@ HEADERS = {
 
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
-SESSION.timeout = 15
+SESSION.timeout = 10
 
 
 def _calc_discount(old: float, new: float) -> float:
@@ -32,105 +30,90 @@ def _safe_float(val) -> float:
     try:
         if isinstance(val, str):
             val = val.replace(",", ".").replace(" lei", "").replace("RON", "").strip()
-        return float(val)
+        return float(val) if val else 0
     except (ValueError, TypeError):
         return 0.0
 
 
 # ---------------------------------------------------------------------------
-# Auchan — VTEX API
+# Auchan — VTEX API (fast, direct)
 # ---------------------------------------------------------------------------
-def _collect_auchan(limit: int = 500) -> list[dict]:
+def _collect_auchan(limit: int = 200) -> list[dict]:
+    """Fetch deals from Auchan VTEX API — top categories only for speed."""
     base = "https://www.auchan.ro/api/io/_v/api/intelligent-search/product_search"
-    categories = [
-        "bere", "vin", "lapte", "branza", "carne", "pui", "peste",
-        "cafea", "ciocolata", "detergent", "sampon", "suc", "oua",
-        "unt", "cascaval", "salam", "conserve", "inghetata",
-        "cereale", "paste", "ulei", "faina",
-    ]
+    # Top 8 categories only — fast enough
+    categories = ["bere", "vin", "lapte", "carne", "pui", "cafea", "ciocolata", "detergent"]
     deals = []
     seen = set()
 
     for q in categories:
         try:
-            page = 1
-            while len(deals) < limit:
-                url = f"{base}?query={quote(q)}&page={page}&count=50"
-                resp = SESSION.get(url, timeout=15)
-                resp.raise_for_status()
-                data = resp.json()
+            url = f"{base}?query={quote(q)}&page=1&count=50"
+            resp = SESSION.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
 
-                products = data.get("products", [])
-                if not products:
-                    break
+            for p in data.get("products", []):
+                try:
+                    pr = p.get("priceRange") or {}
+                    sp = pr.get("sellingPrice") or {}
+                    lp = pr.get("listPrice") or {}
+                    sell = _safe_float(sp.get("lowPrice"))
+                    lst = _safe_float(lp.get("lowPrice"))
+                except (TypeError, ValueError):
+                    continue
 
-                for p in products:
-                    try:
-                        pr = p.get("priceRange") or {}
-                        sp = pr.get("sellingPrice") or {}
-                        lp = pr.get("listPrice") or {}
-                        sell = sp.get("lowPrice") or 0
-                        lst = lp.get("lowPrice") or 0
-                        sell = float(sell) if sell else 0
-                        lst = float(lst) if lst else 0
-                    except (TypeError, ValueError):
-                        continue
+                if lst <= 0 or sell <= 0 or sell >= lst:
+                    continue
 
-                    if lst <= 0 or sell <= 0 or sell >= lst:
-                        continue
+                disc = _calc_discount(lst, sell)
+                if disc < 5:
+                    continue
 
-                    disc = _calc_discount(lst, sell)
-                    if disc < 5:
-                        continue
+                name = p.get("productName", "")
+                key = f"{name.lower()}_{sell}_{lst}"
+                if key in seen:
+                    continue
+                seen.add(key)
 
-                    name = p.get("productName", "")
-                    key = f"{name.lower()}_{sell}_{lst}"
-                    if key in seen:
-                        continue
-                    seen.add(key)
+                cats = p.get("categories", [])
+                cat = cats[0].strip("/").split("/")[0] if cats else ""
 
-                    cats = p.get("categories", [])
-                    cat = cats[0].strip("/").split("/")[0] if cats else ""
-
-                    deals.append({
-                        "store": "Auchan",
-                        "product": name,
-                        "price_old": lst,
-                        "price_new": sell,
-                        "discount_pct": disc,
-                        "savings": round(lst - sell, 2),
-                        "category": cat,
-                        "brand": p.get("brand", ""),
-                        "url": f"https://www.auchan.ro{p.get('link', '')}",
-                    })
-
-                total = data.get("recordsFiltered", 0)
-                if page * 50 >= total:
-                    break
-                page += 1
+                deals.append({
+                    "store": "Auchan",
+                    "product": name,
+                    "price_old": lst,
+                    "price_new": sell,
+                    "discount_pct": disc,
+                    "savings": round(lst - sell, 2),
+                    "category": cat,
+                    "brand": p.get("brand", ""),
+                    "url": f"https://www.auchan.ro{p.get('link', '')}",
+                })
 
         except Exception as e:
             _LOGGER.warning("Auchan [%s]: %s", q, e)
 
-    _LOGGER.info("Auchan: %d deals collected", len(deals))
+    _LOGGER.info("Auchan: %d deals", len(deals))
     return deals
 
 
 # ---------------------------------------------------------------------------
-# PromoAzi parser — Kaufland, Lidl, Carrefour
+# PromoAzi — Kaufland, Lidl, Carrefour (requests + BeautifulSoup)
 # ---------------------------------------------------------------------------
 def _collect_promoazi(store_name: str, url: str, limit: int = 100) -> list[dict]:
+    """Scrape deals from promoazi.ro using requests + BeautifulSoup."""
     deals = []
     try:
         try:
             from bs4 import BeautifulSoup
-            resp = SESSION.get(url, timeout=15)
+            resp = SESSION.get(url, timeout=10)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
             text = soup.get_text("\n")
         except ImportError:
-            _LOGGER.warning("%s: beautifulsoup4 not installed, using raw HTML", store_name)
-            resp = SESSION.get(url, timeout=15)
+            _LOGGER.warning("%s: beautifulsoup4 not installed", store_name)
+            resp = SESSION.get(url, timeout=10)
             resp.raise_for_status()
             text = resp.text
 
@@ -174,7 +157,7 @@ def _collect_promoazi(store_name: str, url: str, limit: int = 100) -> list[dict]
     except Exception as e:
         _LOGGER.warning("%s: %s", store_name, e)
 
-    _LOGGER.info("%s: %d deals collected", store_name, len(deals))
+    _LOGGER.info("%s: %d deals", store_name, len(deals))
     return deals
 
 
@@ -184,7 +167,7 @@ def _collect_promoazi(store_name: str, url: str, limit: int = 100) -> list[dict]
 def collect_all_deals(
     stores: list[str], top: int = 20, min_discount: float = 15
 ) -> dict:
-    """Collect deals from all configured stores. Returns structured dict."""
+    """Collect deals from all configured stores."""
     top = int(top)
     min_discount = float(min_discount)
     all_deals = []
@@ -212,7 +195,7 @@ def collect_all_deals(
     seen = set()
     unique = []
     for d in all_deals:
-        key = (d["store"], d["product"].lower().strip())
+        key = (d["store"], d.get("product", "").lower().strip())
         if key not in seen:
             seen.add(key)
             unique.append(d)
@@ -221,7 +204,7 @@ def collect_all_deals(
     unique.sort(key=lambda d: d["discount_pct"], reverse=True)
     top_deals = unique[:top]
 
-    # Stats
+    # Stats by store
     by_store = {}
     for d in unique:
         by_store.setdefault(d["store"], []).append(d)
@@ -233,7 +216,7 @@ def collect_all_deals(
             "count": len(sd),
             "avg_discount": round(sum(d["discount_pct"] for d in sd) / len(sd), 1),
             "best_discount": best["discount_pct"],
-            "best_product": best["product"][:60],
+            "best_product": (best.get("product") or "")[:60],
         }
 
     return {
@@ -243,6 +226,6 @@ def collect_all_deals(
         "by_store": stats,
         "last_update": datetime.now().isoformat(),
         "best_discount": top_deals[0]["discount_pct"] if top_deals else 0,
-        "best_product": top_deals[0]["product"] if top_deals else "",
-        "best_store": top_deals[0]["store"] if top_deals else "",
+        "best_product": (top_deals[0].get("product") or "") if top_deals else "",
+        "best_store": top_deals[0].get("store", "") if top_deals else "",
     }
