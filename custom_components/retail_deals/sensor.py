@@ -106,16 +106,24 @@ class RetailDealsStoreSensor(RetailDealsBaseSensor):
         self._attr_icon = info.get("icon", "mdi:store")
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{store_id}"
 
+    def _get_store_data(self) -> dict:
+        """Get store data from by_store with case-insensitive lookup."""
+        data = self.coordinator.data or {}
+        by_store = data.get("by_store", {})
+        # Case-insensitive lookup
+        for key, val in by_store.items():
+            if key.lower() == self._store_id:
+                return val
+        return {}
+
     @property
     def native_value(self) -> int:
-        data = self.coordinator.data or {}
-        return data.get("by_store", {}).get(self._store_id, {}).get("count", 0)
+        return self._get_store_data().get("count", 0)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data or {}
-        sd = data.get("by_store", {}).get(self._store_id, {})
-        all_deals = data.get("deals", [])
+        sd = self._get_store_data()
+        all_deals = (self.coordinator.data or {}).get("deals", [])
         store_deals = [d for d in all_deals if d.get("store", "").lower() == self._store_id]
 
         attrs = {

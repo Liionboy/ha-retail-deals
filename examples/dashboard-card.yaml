@@ -1,0 +1,88 @@
+type: vertical-stack
+cards:
+  # Header
+  - type: markdown
+    content: >
+      # 🛒 Cele mai bune reduceri
+
+      **{{ states('sensor.retail_deals_summary') }} oferte** de la 4 magazine
+
+
+  # Stores summary
+  - type: glance
+    title: "🏪 Pe magazine"
+    entities:
+      - sensor.retail_deals_romania_deals_auchan
+      - sensor.retail_deals_romania_deals_kaufland
+      - sensor.retail_deals_romania_deals_lidl
+      - sensor.retail_deals_romania_deals_carrefour
+
+
+  # Top deals - Markdown
+  - type: markdown
+    title: "🥇 Top Reduceri"
+    content: >
+      {% set d1 = states('sensor.retail_deals_romania_retail_deal_1') %}
+      {% set d2 = states('sensor.retail_deals_romania_retail_deal_2') %}
+      {% set d3 = states('sensor.retail_deals_romania_retail_deal_3') %}
+      {% set d4 = states('sensor.retail_deals_romania_retail_deal_4') %}
+      {% set d5 = states('sensor.retail_deals_romania_retail_deal_5') %}
+      {% set d6 = states('sensor.retail_deals_romania_retail_deal_6') %}
+      {% set d7 = states('sensor.retail_deals_romania_retail_deal_7') %}
+      {% set d8 = states('sensor.retail_deals_romania_retail_deal_8') %}
+      {% set d9 = states('sensor.retail_deals_romania_retail_deal_9') %}
+      {% set d10 = states('sensor.retail_deals_romania_retail_deal_10') %}
+
+      {% if d1 != 'N/A' and d1 != 'unavailable' %}
+      | # | Produs | Magazin | Preț | Reducere |
+      |---|--------|---------|------|----------|
+      {% for d in [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10] %}
+      {% if d != 'N/A' and d != 'unavailable' %}
+      {% set parts = d.split(' — ') %}
+      {% if parts | length >= 3 %}
+      | {{ loop.index }} | {{ parts[0] }} | **{{ parts[1] }}** | {{ parts[2] }} | {{ parts[3] if parts | length > 3 else '' }} |
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      {% else %}
+      ⏳ Se încarcă reducerile...
+      {% endif %}
+
+
+  # Best deal highlight
+  - type: markdown
+    content: >
+      {% set best = states('sensor.retail_deals_romania_retail_deal_1') %}
+      {% if best != 'N/A' and best != 'unavailable' %}
+      ---
+      🔥 **CEL MAI BUN DEAL:** {{ best }}
+      {% set a = state_attr('sensor.retail_deals_romania_retail_deal_1', 'economie') %}
+      {% if a %}💰 Economisești **{{ a }}**{% endif %}
+      ---
+      {% endif %}
+
+
+  # Per store details
+  - type: conditional
+    conditions:
+      - entity: sensor.retail_deals_romania_deals_auchan
+        state_not: "0"
+    card:
+      type: markdown
+      title: "🔴 Auchan"
+      content: >
+        {% for i in range(1, 6) %}
+        {% set s = state_attr('sensor.retail_deals_romania_deals_auchan', '#' ~ i ~ ' ') %}
+        {% if s %}
+        {{ s }}
+        {% endif %}
+        {% endfor %}
+
+
+  # Footer
+  - type: markdown
+    content: >
+      {% set lu = state_attr('sensor.retail_deals_summary', 'last_update') %}
+      {% if lu %}
+      🕐 Actualizat: {{ lu[:16] | replace('T', ' ') }}
+      {% endif %}
