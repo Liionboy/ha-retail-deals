@@ -1,15 +1,10 @@
 """Sensor platform for Retail Deals Romania."""
 import logging
-from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorStateClass,
-    SensorDeviceClass,
-)
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -33,18 +28,15 @@ async def async_setup_entry(
 
     entities = []
 
-    # Main summary sensor
+    # Main summary sensor — all deals as attributes
     entities.append(RetailDealsSummarySensor(coordinator, entry))
-
-    # Top deal sensor (best overall)
-    entities.append(RetailDealsTopSensor(coordinator, entry))
 
     # Per-store sensors
     for store_id in stores:
         entities.append(RetailDealsStoreSensor(coordinator, entry, store_id))
 
-    # Individual deal sensors (top N)
-    for i in range(min(top, 10)):
+    # Individual deal sensors (top 10) — product name as state
+    for i in range(min(int(top), 10)):
         entities.append(RetailDealsItemSensor(coordinator, entry, i))
 
     async_add_entities(entities)
@@ -69,11 +61,10 @@ class RetailDealsBaseSensor(CoordinatorEntity, SensorEntity):
 
 
 class RetailDealsSummarySensor(RetailDealsBaseSensor):
-    """Main summary sensor showing total deals count."""
+    """Main summary sensor — state = total deals, attributes = all deals list."""
 
     _attr_name = "Retail Deals Summary"
     _attr_icon = "mdi:shopping"
-    _attr_native_unit_of_measurement = "oferte"
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator, entry)
@@ -87,50 +78,43 @@ class RetailDealsSummarySensor(RetailDealsBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
+        deals = data.get("deals", [])
+        by_store = data.get("by_store", {})
+
+        # Format deals for display
+        deals_list = []
+        for i, d in enumerate(deals[:20], 1):
+            deals_list.append(
+                f"{i}. {d.get('store', '')} | "
+                f"{d.get('product', '')[:45]} | "
+                f"~~{d.get('price_old', 0):.2f}~~ → {d.get('price_new', 0):.2f} lei | "
+                f"-{d.get('discount_pct', 0):.0f}%"
+            )
+
+        # Format store summary
+        stores_summary = []
+        for store, sd in by_store.items():
+            stores_summary.append(
+                f"{store}: {sd.get('count', 0)} oferte, "
+                f"best -{sd.get('best_discount', 0):.0f}% "
+                f"({sd.get('best_product', '')[:30]})"
+            )
+
         return {
-            "by_store": data.get("by_store", {}),
-            "last_update": data.get("last_update", ""),
+            "deals": deals_list,
+            "stores": stores_summary,
             "best_discount": data.get("best_discount", 0),
             "best_product": data.get("best_product", ""),
             "best_store": data.get("best_store", ""),
-        }
-
-
-class RetailDealsTopSensor(RetailDealsBaseSensor):
-    """Sensor showing the best deal."""
-
-    _attr_name = "Retail Deals Best"
-    _attr_icon = "mdi:tag-heart"
-    _attr_native_unit_of_measurement = "%"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_top"
-
-    @property
-    def native_value(self) -> float:
-        data = self.coordinator.data or {}
-        return data.get("best_discount", 0)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data or {}
-        deals = data.get("deals", [])
-        if not deals:
-            return {}
-        best = deals[0]
-        return {
-            "product": best.get("product", ""),
-            "store": best.get("store", ""),
-            "price_old": best.get("price_old", 0),
-            "price_new": best.get("price_new", 0),
-            "savings": best.get("savings", 0),
-            "url": best.get("url", ""),
+            "last_update": data.get("last_update", ""),
+            # Raw data for card
+            "deals_raw": deals,
+            "by_store": by_store,
         }
 
 
 class RetailDealsStoreSensor(RetailDealsBaseSensor):
-    """Sensor for a specific store."""
+    """Sensor for a specific store — state = count, attributes = best deal."""
 
     def __init__(self, coordinator, entry, store_id: str):
         super().__init__(coordinator, entry)
@@ -138,7 +122,6 @@ class RetailDealsStoreSensor(RetailDealsBaseSensor):
         store_info = STORES.get(store_id, {})
         self._attr_name = f"Deals {store_info.get('name', store_id)}"
         self._attr_icon = store_info.get("icon", "mdi:store")
-        self._attr_native_unit_of_measurement = "oferte"
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{store_id}"
 
     @property
@@ -151,45 +134,73 @@ class RetailDealsStoreSensor(RetailDealsBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
         by_store = data.get("by_store", {})
-        store_data = by_store.get(self._store_id, {})
+        sd = by_store.get(self._store_id, {})
+
+        # Get deals for this store
+        all_deals = data.get("deals", [])
+        store_deals = [d for d in all_deals if d.get("store", "").lower() == self._store_id]
+
+        deals_list = []
+        for i, d in enumerate(store_deals[:5], 1):
+            deals_list.append(
+                f"{i}. {d.get('product', '')[:45]} | "
+                f"~~{d.get('price_old', 0):.2f}~~ → {d.get('price_new', 0):.2f} lei | "
+                f"-{d.get('discount_pct', 0):.0f}%"
+            )
+
         return {
-            "avg_discount": store_data.get("avg_discount", 0),
-            "best_discount": store_data.get("best_discount", 0),
-            "best_product": store_data.get("best_product", ""),
+            "avg_discount": sd.get("avg_discount", 0),
+            "best_discount": sd.get("best_discount", 0),
+            "best_product": sd.get("best_product", ""),
+            "deals": deals_list,
         }
 
 
 class RetailDealsItemSensor(RetailDealsBaseSensor):
-    """Sensor for a specific deal (top N)."""
+    """Sensor for a specific deal — state = product name!"""
 
     def __init__(self, coordinator, entry, index: int):
         super().__init__(coordinator, entry)
         self._index = index
-        self._attr_name = f"Retail Deal #{index + 1}"
-        self._attr_icon = "mdi:tag-outline"
-        self._attr_native_unit_of_measurement = "%"
+        self._attr_name = f"Deal #{index + 1}"
+        self._attr_icon = self._get_icon(index)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_deal_{index}"
 
+    @staticmethod
+    def _get_icon(index: int) -> str:
+        if index == 0:
+            return "mdi:trophy"
+        if index == 1:
+            return "mdi:medal"
+        if index == 2:
+            return "mdi:medal-outline"
+        return "mdi:tag-outline"
+
     @property
-    def native_value(self) -> float:
+    def native_value(self) -> str:
+        """State = product name (so it shows in HA UI)."""
         data = self.coordinator.data or {}
         deals = data.get("deals", [])
         if self._index < len(deals):
-            return deals[self._index].get("discount_pct", 0)
-        return 0
+            product = deals[self._index].get("product", "")
+            return product[:50] if product else "N/A"
+        return "N/A"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        """All deal details as attributes."""
         data = self.coordinator.data or {}
         deals = data.get("deals", [])
         if self._index < len(deals):
             d = deals[self._index]
             return {
-                "product": d.get("product", ""),
                 "store": d.get("store", ""),
                 "price_old": d.get("price_old", 0),
                 "price_new": d.get("price_new", 0),
+                "discount_pct": d.get("discount_pct", 0),
                 "savings": d.get("savings", 0),
                 "url": d.get("url", ""),
+                "category": d.get("category", ""),
+                "brand": d.get("brand", ""),
             }
         return {}
