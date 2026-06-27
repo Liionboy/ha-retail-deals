@@ -10,7 +10,7 @@
 class RetailDealsCard extends HTMLElement {
   static getStubConfig() {
     return {
-      entity: "sensor.retail_deals",
+      entity: "sensor.retail_deals_summary",
       title: "🛒 Cele mai bune reduceri",
       max_items: 10,
       show_stores: true,
