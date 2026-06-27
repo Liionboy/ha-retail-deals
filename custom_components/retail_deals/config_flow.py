@@ -5,8 +5,15 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 
 from .const import (
     DOMAIN, CONF_STORES, CONF_TOP, CONF_MIN_DISCOUNT,
@@ -16,20 +23,29 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-STORE_OPTIONS = ["auchan", "kaufland", "lidl", "carrefour"]
+STORE_OPTIONS = [
+    {"value": "auchan", "label": "Auchan"},
+    {"value": "kaufland", "label": "Kaufland"},
+    {"value": "lidl", "label": "Lidl"},
+    {"value": "carrefour", "label": "Carrefour"},
+]
 
 DATA_SCHEMA = vol.Schema({
-    vol.Required(CONF_STORES, default=DEFAULT_STORES): vol.All(
-        vol.Coerce(list),
+    vol.Required(CONF_STORES, default=DEFAULT_STORES): SelectSelector(
+        SelectSelectorConfig(
+            options=STORE_OPTIONS,
+            multiple=True,
+            mode=SelectSelectorMode.LIST,
+        )
     ),
-    vol.Required(CONF_TOP, default=DEFAULT_TOP): vol.All(
-        vol.Coerce(int), vol.Range(min=5, max=50)
+    vol.Required(CONF_TOP, default=DEFAULT_TOP): NumberSelector(
+        NumberSelectorConfig(min=5, max=50, mode=NumberSelectorMode.BOX)
     ),
-    vol.Required(CONF_MIN_DISCOUNT, default=DEFAULT_MIN_DISCOUNT): vol.All(
-        vol.Coerce(int), vol.Range(min=5, max=80)
+    vol.Required(CONF_MIN_DISCOUNT, default=DEFAULT_MIN_DISCOUNT): NumberSelector(
+        NumberSelectorConfig(min=5, max=80, mode=NumberSelectorMode.BOX, unit_of_measurement="%")
     ),
-    vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
-        vol.Coerce(int), vol.Range(min=60, max=1440)
+    vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): NumberSelector(
+        NumberSelectorConfig(min=60, max=1440, mode=NumberSelectorMode.BOX, unit_of_measurement="min")
     ),
 })
 
@@ -50,12 +66,9 @@ class RetailDealsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 stores = user_input.get(CONF_STORES, DEFAULT_STORES)
                 if isinstance(stores, str):
                     stores = [s.strip() for s in stores.split(",")]
-
-                valid_stores = [s for s in stores if s in STORE_OPTIONS]
-                if not valid_stores:
+                if not stores:
                     errors["base"] = "no_stores"
                 else:
-                    user_input[CONF_STORES] = valid_stores
                     return self.async_create_entry(
                         title="Retail Deals Romania",
                         data=user_input,
