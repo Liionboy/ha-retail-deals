@@ -147,11 +147,16 @@ class RetailDealsItemSensor(RetailDealsBaseSensor):
 
     @property
     def native_value(self) -> str:
-        """Product name as state — visible in HA UI."""
+        """Full deal info as state — visible in HA UI."""
         data = self.coordinator.data or {}
         deals = data.get("deals", [])
         if self._index < len(deals):
-            return (deals[self._index].get("product") or "N/A")[:50]
+            d = deals[self._index]
+            product = (d.get("product") or "N/A")[:35]
+            store = d.get("store", "")
+            pn = d.get("price_new", 0)
+            disc = d.get("discount_pct", 0)
+            return f"{product} — {store} — {pn:.2f} lei (-{disc:.0f}%)"
         return "N/A"
 
     @property

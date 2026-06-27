@@ -1,0 +1,81 @@
+views:
+  - title: "🛒 Reduceri Retail Romania"
+    cards:
+      # Summary card
+      - type: entities
+        title: "📊 Sumar"
+        entities:
+          - entity: sensor.retail_deals_summary
+            name: "Total oferte"
+          - entity: sensor.retail_deals_summary
+            name: "Cel mai bun discount"
+            attribute: best_discount
+          - entity: sensor.retail_deals_summary
+            name: "Best product"
+            attribute: best_product
+          - entity: sensor.retail_deals_summary
+            name: "Best store"
+            attribute: best_store
+
+      # Per-store cards
+      - type: glance
+        title: "🏪 Pe magazine"
+        entities:
+          - entity: sensor.retail_deals_romania_deals_auchan
+            name: "Auchan"
+          - entity: sensor.retail_deals_romania_deals_kaufland
+            name: "Kaufland"
+          - entity: sensor.retail_deals_romania_deals_lidl
+            name: "Lidl"
+          - entity: sensor.retail_deals_romania_deals_carrefour
+            name: "Carrefour"
+
+      # Top 10 deals
+      - type: entities
+        title: "🥇 Top 10 Reduceri"
+        show_header_toggle: false
+        entities:
+          - entity: sensor.retail_deals_romania_retail_deal_1
+            name: "🥇 Deal #1"
+          - entity: sensor.retail_deals_romania_retail_deal_2
+            name: "🥈 Deal #2"
+          - entity: sensor.retail_deals_romania_retail_deal_3
+            name: "🥉 Deal #3"
+          - entity: sensor.retail_deals_romania_retail_deal_4
+            name: "4️⃣ Deal #4"
+          - entity: sensor.retail_deals_romania_retail_deal_5
+            name: "5️⃣ Deal #5"
+          - entity: sensor.retail_deals_romania_retail_deal_6
+            name: "6️⃣ Deal #6"
+          - entity: sensor.retail_deals_romania_retail_deal_7
+            name: "7️⃣ Deal #7"
+          - entity: sensor.retail_deals_romania_retail_deal_8
+            name: "8️⃣ Deal #8"
+          - entity: sensor.retail_deals_romania_retail_deal_9
+            name: "9️⃣ Deal #9"
+          - entity: sensor.retail_deals_romania_retail_deal_10
+            name: "🔟 Deal #10"
+
+      # Markdown card with all details
+      - type: markdown
+        title: "📋 Toate ofertele"
+        content: >
+          {% set deals = state_attr('sensor.retail_deals_summary', 'deals_raw') or
+          state_attr('sensor.retail_deals_summary', 'deals') or [] %}
+
+          {% if deals is string %}
+          {{ deals }}
+          {% elif deals is iterable and deals is not string %}
+          {% for d in deals[:10] %}
+          {% if d is mapping %}
+          **{{ loop.index }}.** {{ d.get('product', '')[:40] }}
+          — {{ d.get('store', '') }}
+          — ~~{{ d.get('price_old', 0) }}~~ → **{{ d.get('price_new', 0) }} lei**
+          — 🔴 -{{ d.get('discount_pct', 0) }}%
+          {% else %}
+          {{ d }}
+          {% endif %}
+          {% endfor %}
+          {% else %}
+          Nu sunt date disponibile.
+          {% endif %}
